@@ -67,6 +67,15 @@ with tf.name_scope("cross_entropy") as scope:
     # Create a summary to monitor the cost function
     tf.summary.scalar("cost_function", cost_function)
 
+# Optimizer
+with tf.name_scope("optimizer_Adam") as scope:
+    # Option 1: Gradient descent
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(cost_function)
+
+    # Option 2: Adam Optimizer
+    # optimizer = tf.train.AdamOptimizer(lr).minimize(cost_function)
+
+init = tf.global_variables_initializer()
 
 # Add summary ops to collect
 w1 = tf.summary.histogram("WConv1", W1)
@@ -79,16 +88,6 @@ w4 = tf.summary.histogram("WFull4", W4)
 b4 = tf.summary.histogram("BFull4", B4)
 w5 = tf.summary.histogram("WOut5", W5)
 b5 = tf.summary.histogram("BOut5", B5)
-
-# Optimizer
-with tf.name_scope("optimizer_Adam") as scope:
-    # Option 1: Gradient descent
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(cost_function)
-
-    # Option 2: Adam Optimizer
-    # optimizer = tf.train.AdamOptimizer(lr).minimize(cost_function)
-
-init = tf.global_variables_initializer()
 merged_summary_op = tf.summary.merge_all()
 
 # Launch graph

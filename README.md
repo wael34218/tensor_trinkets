@@ -17,3 +17,9 @@ https://www.youtube.com/watch?v=vq2nnJ4g6N0&t=1s
 Adam Optimizer: https://arxiv.org/pdf/1412.6980v8.pdf
 
 Seq2Seq Align MT: https://arxiv.org/pdf/1409.0473v7.pdf
+
+### Helpful Tutorials
+
+https://danijar.com/introduction-to-recurrent-networks-in-tensorflow/
+
+https://danijar.com/variable-sequence-lengths-in-tensorflow/

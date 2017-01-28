@@ -23,3 +23,13 @@ Seq2Seq Align MT: https://arxiv.org/pdf/1409.0473v7.pdf
 https://danijar.com/introduction-to-recurrent-networks-in-tensorflow/
 
 https://danijar.com/variable-sequence-lengths-in-tensorflow/
+
+### Working Seq2Seq Tutorial
+
+http://suriyadeepan.github.io/2016-12-31-practical-seq2seq/
+
+http://suriyadeepan.github.io/2016-06-28-easy-seq2seq/
+
+### Best Seq2Seq explanation
+
+https://github.com/hans/ipython-notebooks/blob/master/tf/TF%20tutorial.ipynb 

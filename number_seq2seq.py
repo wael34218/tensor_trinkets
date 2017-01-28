@@ -1,14 +1,15 @@
 import tensorflow as tf
+import nltk
 import numpy as np
 
 seq_length = 10
 batch_size = 64
-vocab_size = 7  # Total vocab size including <eos> and <pad>
 embedding_dim = 10  # dimension of each word
-memory_dim = 100
+num_hidden = 100  # number of hidden units in LSTM
 learning_rate = 0.05
 momentum = 0.9
 epoch = 50
+vocab_size = 7  # Total vocab size including <eos> and <pad>
 
 # Input and output sequences
 # TODO: Bucketing
@@ -20,7 +21,7 @@ dec_inp = ([tf.zeros_like(enc_inp[0], dtype=tf.int32, name="GO")] + enc_inp[:-1]
 # Neural Network Layers
 with tf.name_scope("Seq2Seq") as scope:
     W1 = [tf.ones_like(labels_t, dtype=tf.float32) for labels_t in labels]
-    cell = tf.nn.rnn_cell.GRUCell(memory_dim)  # Can also use BasicLSTMCell
+    cell = tf.nn.rnn_cell.GRUCell(num_hidden)  # Can also use BasicLSTMCell
     outputs, dec_memory = tf.nn.seq2seq.embedding_rnn_seq2seq(
         enc_inp, dec_inp, cell, vocab_size, vocab_size, embedding_dim)
 
@@ -44,9 +45,9 @@ def get_batch(batch_size):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
     X = [np.random.choice(vocab_size-3, size=(np.random.randint(4, seq_length-1)))
          for _ in range(batch_size)]
-    # Add <eos>
+    # Add <eos> : id = vocab_size - 2
     X = [np.append(x, vocab_size-2) for x in X]
-    # Add <pad>
+    # Add <pad> : id = vocab_size - 1
     X = [np.append(x, [vocab_size-1] * (seq_length - len(x))) for x in X]
     # For testing purposes make output sequence equals to input sequence
     Y = X[:]
@@ -82,5 +83,11 @@ with tf.Session() as sess:
     test_feed.update({labels[t]: batch_y[t] for t in range(seq_length)})
     dec_outputs_batch = sess.run(outputs, test_feed)
     Y_out = [logits_t.argmax(axis=1) for logits_t in dec_outputs_batch]
+
     print(batch_x.T)
     print(np.array(Y_out).T)
+
+    # Blue score
+    # TODO: Remove <pad> from sequence before calculating the score
+    bleus = [nltk.translate.bleu_score.sentence_bleu([y], p) for y, p in zip(batch_y, Y_out)]
+    print("BLEU : " + str(sum(bleus)/len(bleus)))

@@ -46,7 +46,6 @@ with tf.name_scope("LSTM") as scope:
     # Make sure the time_major is changed accordingly.
 
     cell = tf.nn.rnn_cell.GRUCell(n_hidden_units)  # Can also use BasicLSTMCell
-    cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden_units)
     cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=0.8)
     cell = tf.nn.rnn_cell.MultiRNNCell([cell] * n_layers)
     Y2, final_state = tf.nn.dynamic_rnn(cell, Y1, dtype=tf.float32, time_major=False)

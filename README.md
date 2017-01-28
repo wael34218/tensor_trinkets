@@ -13,10 +13,12 @@ https://www.youtube.com/watch?v=Se9ByBnKb0o&index=1&list=PLXO45tsB95cJHXaDKpbwr5
 
 https://www.youtube.com/watch?v=vq2nnJ4g6N0&t=1s
 
-### Reading Material
+### Paper Reading Material
 Adam Optimizer: https://arxiv.org/pdf/1412.6980v8.pdf
 
 Seq2Seq Align MT: https://arxiv.org/pdf/1409.0473v7.pdf
+
+LSTM Search Space: https://arxiv.org/pdf/1503.04069v1.pdf
 
 ### Helpful Tutorials
 
@@ -29,6 +31,8 @@ https://danijar.com/variable-sequence-lengths-in-tensorflow/
 http://suriyadeepan.github.io/2016-12-31-practical-seq2seq/
 
 http://suriyadeepan.github.io/2016-06-28-easy-seq2seq/
+
+tflearn: https://github.com/ichuang/tflearn_seq2seq
 
 ### Best Seq2Seq explanation
 

@@ -11,6 +11,8 @@ momentum = 0.9
 epoch = 50
 
 # Input and output sequences
+# TODO: Bucketing
+# TODO: Use word embedding vectors
 enc_inp = [tf.placeholder(tf.int32, shape=(None,), name="src%i" % t) for t in range(seq_length)]
 labels = [tf.placeholder(tf.int32, shape=(None,), name="trg%i" % t) for t in range(seq_length)]
 dec_inp = ([tf.zeros_like(enc_inp[0], dtype=tf.int32, name="GO")] + enc_inp[:-1])
@@ -32,7 +34,6 @@ with tf.name_scope("momentum_optimizer") as scope:
 init = tf.global_variables_initializer()
 
 # Add summary ops to collect
-tf.summary.histogram("LSTM_Weights", W1)
 tf.summary.scalar("loss", loss)
 tf.summary.scalar("Magnitude at t=1", magnitude)
 merged_summary_op = tf.summary.merge_all()
@@ -40,6 +41,7 @@ summary_op = tf.summary.merge_all()
 
 
 def get_batch(batch_size):
+    # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
     X = [np.random.choice(vocab_size-3, size=(np.random.randint(4, seq_length-1)))
          for _ in range(batch_size)]
     # Add <eos>

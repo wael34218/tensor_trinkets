@@ -11,6 +11,21 @@ momentum = 0.9
 epoch = 50
 vocab_size = 7  # Total vocab size including <eos> and <pad>
 
+eos = 1
+pad = 2
+unk = 3
+ar = open('data/parallel/ar.tok')
+en = open('data/parallel/en.tok')
+sentence_pairs = []
+for aline in ar:
+    eline = en.readline()
+    if len(aline.split()) < seq_length and len(eline.split()) < seq_length:
+        aline = aline.split() + [eos] + [pad] * (seq_length - len(aline.split()) - 1)
+        eline = eline.split() + [eos] + [pad] * (seq_length - len(eline.split()) - 1)
+        sentence_pairs.append((aline, eline))
+
+print("# Sentences : " + str(len(sentence_pairs)))
+
 # Input and output sequences
 # TODO: Bucketing
 # TODO: Use word embedding vectors
@@ -39,6 +54,7 @@ tf.summary.scalar("loss", loss)
 tf.summary.scalar("Magnitude at t=1", magnitude)
 merged_summary_op = tf.summary.merge_all()
 summary_op = tf.summary.merge_all()
+
 
 
 def get_batch(batch_size):

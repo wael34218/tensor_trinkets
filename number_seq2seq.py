@@ -11,20 +11,25 @@ momentum = 0.9
 epoch = 50
 vocab_size = 7  # Total vocab size including <eos> and <pad>
 
+
+# Data sequence preparation
 eos = 1
 pad = 2
 unk = 3
 ar = open('data/parallel/ar.tok')
 en = open('data/parallel/en.tok')
 sentence_pairs = []
+
 for aline in ar:
     eline = en.readline()
     if len(aline.split()) < seq_length and len(eline.split()) < seq_length:
         aline = aline.split() + [eos] + [pad] * (seq_length - len(aline.split()) - 1)
         eline = eline.split() + [eos] + [pad] * (seq_length - len(eline.split()) - 1)
-        sentence_pairs.append((aline, eline))
+        sentence_pairs.append((eline, aline))
 
-print("# Sentences : " + str(len(sentence_pairs)))
+data = np.reshape(sentence_pairs, newshape=(len(sentence_pairs), seq_length*2))
+np.random.shuffle(data)
+print("# Sentences : " + str(len(data)))
 
 # Input and output sequences
 # TODO: Bucketing
@@ -56,8 +61,7 @@ merged_summary_op = tf.summary.merge_all()
 summary_op = tf.summary.merge_all()
 
 
-
-def get_batch(batch_size):
+def get_batch(batch_size, i):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
     X = [np.random.choice(vocab_size-3, size=(np.random.randint(4, seq_length-1)))
          for _ in range(batch_size)]
@@ -81,7 +85,7 @@ with tf.Session() as sess:
         avg_cost = 0.
         total_batch = 10  # It should be dependednt on the training data size
         for i in range(total_batch):
-            batch_x, batch_y = get_batch(batch_size)
+            batch_x, batch_y = get_batch(batch_size, i)
             feed_dict = {enc_inp[t]: batch_x[t] for t in range(seq_length)}
             feed_dict.update({labels[t]: batch_y[t] for t in range(seq_length)})
             sess.run(optimizer, feed_dict=feed_dict)

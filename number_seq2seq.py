@@ -2,7 +2,6 @@ import tensorflow as tf
 import nltk
 import numpy as np
 
-seq_length = 10
 batch_size = 64
 embedding_dim = 10  # dimension of each word
 num_hidden = 100  # number of hidden units in LSTM
@@ -10,8 +9,11 @@ learning_rate = 0.05
 momentum = 0.9
 epoch = 50
 
-en_vocab_size = 10  # Total vocab size including <eos> and <pad>
-de_vocab_size = 10  # Total vocab size including <eos> and <pad>
+en_seq_length = 10
+de_seq_length = 5
+
+en_vocab_size = 8  # Total vocab size including <eos> and <pad>
+de_vocab_size = 4  # Total vocab size including <eos> and <pad>
 
 
 # Data sequence preparation
@@ -22,9 +24,9 @@ unk = 3
 # Input and output sequences
 # TODO: Bucketing
 # TODO: Use word embedding vectors
-enc_inp = [tf.placeholder(tf.int32, shape=(None,), name="src%i" % t) for t in range(seq_length)]
-labels = [tf.placeholder(tf.int32, shape=(None,), name="trg%i" % t) for t in range(seq_length)]
-dec_inp = ([tf.zeros_like(enc_inp[0], dtype=tf.int32, name="GO")] + enc_inp[:-1])
+enc_inp = [tf.placeholder(tf.int32, shape=(None,), name="src%i" % t) for t in range(en_seq_length)]
+labels = [tf.placeholder(tf.int32, shape=(None,), name="trg%i" % t) for t in range(de_seq_length)]
+dec_inp = ([tf.zeros_like(labels[0], dtype=tf.int32, name="GO")] + labels[:-1])
 
 # Neural Network Layers
 with tf.name_scope("Seq2Seq") as scope:
@@ -50,14 +52,14 @@ merged_summary_op = tf.summary.merge_all()
 
 def get_batch(batch_size, i):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
-    X = [np.random.choice(en_vocab_size-3, size=(np.random.randint(4, seq_length-1)))
+    X = [np.random.choice(en_vocab_size-3, size=(np.random.randint(4, en_seq_length-1)))
          for _ in range(batch_size)]
     # Add <eos> : id = vocab_size - 2
     X = [np.append(x, en_vocab_size-2) for x in X]
     # Add <pad> : id = vocab_size - 1
-    X = [np.append(x, [en_vocab_size-1] * (seq_length - len(x))) for x in X]
+    X = [np.append(x, [en_vocab_size-1] * (en_seq_length - len(x))) for x in X]
     # For testing purposes make output sequence equals to input sequence
-    Y = [x // 2 for x in X]
+    Y = [x[:de_seq_length] // 2 for x in X]
 
     # Dimshuffle to seq_length * batch_size
     X = np.array(X).T
@@ -74,8 +76,8 @@ with tf.Session() as sess:
         total_batch = 10  # It should be dependednt on the training data size
         for i in range(total_batch):
             batch_x, batch_y = get_batch(batch_size, i)
-            feed_dict = {enc_inp[t]: batch_x[t] for t in range(seq_length)}
-            feed_dict.update({labels[t]: batch_y[t] for t in range(seq_length)})
+            feed_dict = {enc_inp[t]: batch_x[t] for t in range(en_seq_length)}
+            feed_dict.update({labels[t]: batch_y[t] for t in range(de_seq_length)})
             sess.run(optimizer, feed_dict=feed_dict)
 
             # Compute the average loss OPTIONAL
@@ -88,8 +90,8 @@ with tf.Session() as sess:
     print("Tuning Completed!")
 
     batch_x, batch_y = get_batch(10, 1)
-    test_feed = {enc_inp[t]: batch_x[t] for t in range(seq_length)}
-    test_feed.update({labels[t]: batch_y[t] for t in range(seq_length)})
+    test_feed = {enc_inp[t]: batch_x[t] for t in range(en_seq_length)}
+    test_feed.update({labels[t]: batch_y[t] for t in range(de_seq_length)})
     dec_outputs_batch = sess.run(outputs, test_feed)
     Y_out = [logits_t.argmax(axis=1) for logits_t in dec_outputs_batch]
 

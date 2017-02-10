@@ -9,27 +9,15 @@ num_hidden = 100  # number of hidden units in LSTM
 learning_rate = 0.05
 momentum = 0.9
 epoch = 50
-vocab_size = 7  # Total vocab size including <eos> and <pad>
+
+en_vocab_size = 10  # Total vocab size including <eos> and <pad>
+de_vocab_size = 10  # Total vocab size including <eos> and <pad>
 
 
 # Data sequence preparation
 eos = 1
 pad = 2
 unk = 3
-ar = open('data/parallel/ar.tok')
-en = open('data/parallel/en.tok')
-sentence_pairs = []
-
-for aline in ar:
-    eline = en.readline()
-    if len(aline.split()) < seq_length and len(eline.split()) < seq_length:
-        aline = aline.split() + [eos] + [pad] * (seq_length - len(aline.split()) - 1)
-        eline = eline.split() + [eos] + [pad] * (seq_length - len(eline.split()) - 1)
-        sentence_pairs.append((eline, aline))
-
-data = np.reshape(sentence_pairs, newshape=(len(sentence_pairs), seq_length*2))
-np.random.shuffle(data)
-print("# Sentences : " + str(len(data)))
 
 # Input and output sequences
 # TODO: Bucketing
@@ -43,10 +31,10 @@ with tf.name_scope("Seq2Seq") as scope:
     W1 = [tf.ones_like(labels_t, dtype=tf.float32) for labels_t in labels]
     cell = tf.nn.rnn_cell.GRUCell(num_hidden)  # Can also use BasicLSTMCell
     outputs, dec_memory = tf.nn.seq2seq.embedding_rnn_seq2seq(
-        enc_inp, dec_inp, cell, vocab_size, vocab_size, embedding_dim)
+        enc_inp, dec_inp, cell, en_vocab_size, de_vocab_size, embedding_dim)
 
 with tf.name_scope("cross_entropy") as scope:
-    loss = tf.nn.seq2seq.sequence_loss(outputs, labels, W1, vocab_size)
+    loss = tf.nn.seq2seq.sequence_loss(outputs, labels, W1, de_vocab_size)
     magnitude = tf.sqrt(tf.reduce_sum(tf.square(dec_memory[1])))
 
 with tf.name_scope("momentum_optimizer") as scope:
@@ -58,19 +46,18 @@ init = tf.global_variables_initializer()
 tf.summary.scalar("loss", loss)
 tf.summary.scalar("Magnitude at t=1", magnitude)
 merged_summary_op = tf.summary.merge_all()
-summary_op = tf.summary.merge_all()
 
 
 def get_batch(batch_size, i):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
-    X = [np.random.choice(vocab_size-3, size=(np.random.randint(4, seq_length-1)))
+    X = [np.random.choice(en_vocab_size-3, size=(np.random.randint(4, seq_length-1)))
          for _ in range(batch_size)]
     # Add <eos> : id = vocab_size - 2
-    X = [np.append(x, vocab_size-2) for x in X]
+    X = [np.append(x, en_vocab_size-2) for x in X]
     # Add <pad> : id = vocab_size - 1
-    X = [np.append(x, [vocab_size-1] * (seq_length - len(x))) for x in X]
+    X = [np.append(x, [en_vocab_size-1] * (seq_length - len(x))) for x in X]
     # For testing purposes make output sequence equals to input sequence
-    Y = X[:]
+    Y = [x // 2 for x in X]
 
     # Dimshuffle to seq_length * batch_size
     X = np.array(X).T
@@ -78,6 +65,7 @@ def get_batch(batch_size, i):
     return X, Y
 
 
+saver = tf.train.Saver()
 with tf.Session() as sess:
     sess.run(init)
     summary_writer = tf.summary.FileWriter("./logs", sess.graph)
@@ -95,10 +83,11 @@ with tf.Session() as sess:
             summary_str = sess.run(merged_summary_op, feed_dict=feed_dict)
             summary_writer.add_summary(summary_str, iteration*total_batch + 1)
         print("Iteration:", '%04d' % (iteration + 1), "cost=", "{:.9f}".format(avg_cost))
+        saver.save(sess, 'model_num_seq2seq', global_step=iteration)
 
     print("Tuning Completed!")
 
-    batch_x, batch_y = get_batch(10)
+    batch_x, batch_y = get_batch(10, 1)
     test_feed = {enc_inp[t]: batch_x[t] for t in range(seq_length)}
     test_feed.update({labels[t]: batch_y[t] for t in range(seq_length)})
     dec_outputs_batch = sess.run(outputs, test_feed)

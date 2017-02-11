@@ -1,5 +1,4 @@
 import tensorflow as tf
-import nltk
 import numpy as np
 
 batch_size = 64
@@ -7,16 +6,11 @@ embedding_dim = 10  # dimension of each word
 num_hidden = 100  # number of hidden units in LSTM
 learning_rate = 0.05
 momentum = 0.9
-epoch = 50
-
+epoch = 101
 en_seq_length = 10
 de_seq_length = 5
-
 en_vocab_size = 8  # Total vocab size including <eos> and <pad>
 de_vocab_size = 4  # Total vocab size including <eos> and <pad>
-
-
-# Data sequence preparation
 eos = 1
 pad = 2
 unk = 3
@@ -42,13 +36,6 @@ with tf.name_scope("cross_entropy") as scope:
 with tf.name_scope("momentum_optimizer") as scope:
     optimizer = tf.train.MomentumOptimizer(learning_rate, momentum).minimize(loss)
 
-init = tf.global_variables_initializer()
-
-# Add summary ops to collect
-tf.summary.scalar("loss", loss)
-tf.summary.scalar("Magnitude at t=1", magnitude)
-merged_summary_op = tf.summary.merge_all()
-
 
 def get_batch(batch_size, i):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
@@ -66,29 +53,13 @@ def get_batch(batch_size, i):
     Y = np.array(Y).T
     return X, Y
 
-
 saver = tf.train.Saver(tf.global_variables())
 with tf.Session() as sess:
-    sess.run(init)
-    summary_writer = tf.summary.FileWriter("./logs", sess.graph)
-    for iteration in range(epoch):
-        avg_cost = 0.
-        total_batch = 10  # It should be dependednt on the training data size
-        for i in range(total_batch):
-            batch_x, batch_y = get_batch(batch_size, i)
-            feed_dict = {enc_inp[t]: batch_x[t] for t in range(en_seq_length)}
-            feed_dict.update({labels[t]: batch_y[t] for t in range(de_seq_length)})
-            sess.run(optimizer, feed_dict=feed_dict)
-
-            # Compute the average loss OPTIONAL
-            avg_cost += sess.run(loss, feed_dict=feed_dict)/total_batch
-            summary_str = sess.run(merged_summary_op, feed_dict=feed_dict)
-            summary_writer.add_summary(summary_str, iteration*total_batch + 1)
-        print("Iteration:", '%04d' % (iteration + 1), "cost=", "{:.9f}".format(avg_cost))
-
-    saver.save(sess, 'savedmodels/model_num_seq2seq')
-
-    print("Tuning Completed!")
+    # new_saver = tf.train.import_meta_graph('savedmodels/model_num_seq2seq-9.meta')
+    # new_saver.restore(sess, tf.train.latest_checkpoint('savedmodels/'))
+    # graph = tf.get_default_graph()
+    saver.restore(sess, 'savedmodels/model_num_seq2seq')
+    print("Model restored.")
 
     batch_x, batch_y = get_batch(10, 1)
     test_feed = {enc_inp[t]: batch_x[t] for t in range(en_seq_length)}
@@ -98,8 +69,3 @@ with tf.Session() as sess:
 
     print(batch_x.T)
     print(np.array(Y_out).T)
-
-    # Blue score
-    # TODO: Remove <pad> from sequence before calculating the score
-    bleus = [nltk.translate.bleu_score.sentence_bleu([y], p) for y, p in zip(batch_y, Y_out)]
-    print("BLEU : " + str(sum(bleus)/len(bleus)))

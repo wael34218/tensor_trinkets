@@ -8,12 +8,13 @@ from functools import reduce
 subword_count = 15
 hidden_units = 20
 embedding_size = 16
-learning_rate = 0.05
-max_subwords_per_word = 15
-min_subwords_per_word = 12
+learning_rate = 0.01
+momentum = 0.1
+max_subwords = 15
+min_subwords = 12
 batch_size = 256
-epoch = 20
-total_batches = 500
+epoch = 35
+total_batches = 50
 
 # Input
 sub_words = tf.placeholder(shape=(None, subword_count), dtype=tf.float32)
@@ -21,27 +22,18 @@ sub_words = tf.placeholder(shape=(None, subword_count), dtype=tf.float32)
 # Output
 semantic = tf.placeholder(shape=(None, embedding_size), dtype=tf.float32)
 
+# Network
 with tf.name_scope("Full") as scope:
-    W1 = tf.Variable(initial_value=tf.random_uniform([subword_count, hidden_units], -0.1, 0.1),
+    W1 = tf.Variable(initial_value=tf.random_uniform([subword_count, embedding_size], -0.1, 0.1),
                      name="W1", dtype=tf.float32)
-    B1 = tf.Variable(initial_value=tf.random_uniform([hidden_units], -0.1, 0.1),
-                     dtype=tf.float32, name="B1")
-    Y1 = tf.nn.relu(tf.matmul(sub_words, W1) + B1)
-
-with tf.name_scope("Output") as scope:
-    W2 = tf.Variable(initial_value=tf.random_uniform([hidden_units, embedding_size], -0.1, 0.1),
-                     name="W2")
-    B2 = tf.Variable(initial_value=tf.random_uniform([embedding_size], -0.1, 0.1), name="B2")
-    Y2 = tf.nn.relu(tf.matmul(Y1, W2) + B2)
+    Y1 = tf.matmul(sub_words, W1)
 
 with tf.name_scope("RMSE") as scope:
-    loss = tf.sqrt(tf.reduce_mean(tf.square(tf.subtract(Y2, semantic))))
+    loss = tf.sqrt(tf.reduce_mean(tf.square(tf.subtract(Y1, semantic))))
     tf.summary.scalar("Loss", loss)
 
-# Optimizer
-with tf.name_scope("optimizer_GD") as scope:
-    # Gradient descent: minimize cost function
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+with tf.name_scope("optimizer") as scope:
+    optimizer = tf.train.MomentumOptimizer(learning_rate, momentum).minimize(loss)
 
 # Create or load word vectors:
 vecs = []  # This should be the word vector representation
@@ -57,15 +49,12 @@ for sv in range(subword_count):
 
 
 def next_feed():
-    words = [np.random.choice(subword_count, size=(np.random.randint(min_subwords_per_word,
-                                                                     max_subwords_per_word)))
+    words = [np.random.choice(subword_count, size=(np.random.randint(min_subwords, max_subwords)))
              for _ in range(batch_size)]
 
     x = np.array([reduce(lambda a, b: a+b, map(lambda x: np.array(one_hot[x]), w)) for w in words])
     y = np.array([reduce(lambda a, b: a+b, map(lambda x: np.array(vecs[x]), w)) for w in words])
-
     return {sub_words: x, semantic: y}, words
-
 
 init = tf.global_variables_initializer()
 merged_summary_op = tf.summary.merge_all()
@@ -82,9 +71,8 @@ with tf.Session() as sess:
             avg_cost += sess.run(loss, feed_dict=feed_dict)/total_batches
             summary_str = sess.run(merged_summary_op, feed_dict=feed_dict)
             summary_writer.add_summary(summary_str, iteration*total_batches + 1)
-        print("Iteration:", '%04d' % (iteration + 1), "cost=", "{:.9f}".format(avg_cost))
-        predict = sess.run(Y2, feed_dict)
+        print("\nIteration:", '%04d' % (iteration + 1), "cost=", "{:.9f}".format(avg_cost))
         print("Subword IDs:" + str(words[0]))
         print("Target Vector: " + str(feed_dict[semantic][0]))
+        predict = sess.run(Y1, feed_dict)
         print(["%.2f" % x for x in predict[0]])
-        print("=========================")

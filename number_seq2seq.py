@@ -4,16 +4,16 @@ import numpy as np
 batch_size = 64
 embedding_dim = 10  # dimension of each word
 num_hidden = 100  # number of hidden units in LSTM
-att_num_hidden = 30
-learning_rate = 0.05
+att_num_hidden = 100
+learning_rate = 0.001
 momentum = 0.9
-epoch = 50
+epoch = 400
 
-en_seq_length = 15
-de_seq_length = en_seq_length
+en_seq_length = 7
+de_seq_length = 7
 
 en_vocab_size = 10  # Total vocab size including <eos> and <pad>
-de_vocab_size = 10  # Total vocab size including <eos> and <pad>
+de_vocab_size = 6  # Total vocab size including <eos> and <pad>
 num_layers = 3
 
 
@@ -27,7 +27,7 @@ def get_batch(batch_size, i):
     # TODO: Instead of picking random sequence lookup word ids/vectors from dictionary
     X = [np.random.choice(en_vocab_size-4, size=(np.random.randint(4, en_seq_length-1)))
          for _ in range(batch_size)]
-    L = [len(x) for x in X]
+    L = [len(x) + 1 for x in X]
     max_l = max(L) + 1
     # Add <eos> : id = vocab_size - 2
     X = [np.append(x, en_vocab_size-2) for x in X]
@@ -36,15 +36,16 @@ def get_batch(batch_size, i):
     # For testing purposes make output sequence equals to input sequence
     Y = [x[:de_seq_length] // 2 for x in X]
     D = [np.insert(x, 0, de_vocab_size - 1)[:-1] for x in Y]
+    L = [len(x) for x in D]
     # Dimshuffle to seq_length * batch_size
     return X, Y, D, L
 
 
 # Input and output sequences
-pl_inputs = tf.placeholder(shape=(batch_size, None), dtype=tf.int32, name='encoder_inputs')
-pl_labels = tf.placeholder(shape=(batch_size, None), dtype=tf.int32, name='decoder_targets')
-pl_decoder = tf.placeholder(shape=(batch_size, None), dtype=tf.int32, name='decoder_inputs')
-pl_length = tf.placeholder(shape=(batch_size), dtype=tf.int32, name='sequence_lengths')
+pl_inputs = tf.placeholder(shape=(None, None), dtype=tf.int32, name='encoder_inputs')
+pl_labels = tf.placeholder(shape=(None, None), dtype=tf.int32, name='decoder_targets')
+pl_decoder = tf.placeholder(shape=(None, None), dtype=tf.int32, name='decoder_inputs')
+pl_length = tf.placeholder(shape=(None, ), dtype=tf.int32, name='sequence_lengths')
 
 encoder_inputs = tf.one_hot(pl_inputs, en_vocab_size)
 decoder_inputs = tf.one_hot(pl_decoder, de_vocab_size)
@@ -71,9 +72,28 @@ for _ in range(num_layers):
     cell = tf.contrib.rnn.LSTMCell(num_hidden)
     decoder_cells.append(cell)
 
-# attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(att_num_hidden, encoder_outputs)
-# decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
-#     decoder_cells[-1], attention_mechanism, name="attention")
+def attn_decoder_input_fn(inputs, attention):
+    #if not self.attn_input_feeding:
+    #    return inputs
+
+    # Essential when use_residual=True
+    _input_layer = tf.layers.Dense(num_hidden, dtype=tf.float32, name='attn_input_feeding')
+    return _input_layer(tf.concat([inputs, attention], -1))
+
+attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(att_num_hidden, encoder_outputs)
+
+decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
+    cell=decoder_cells[-1],
+    attention_mechanism=attention_mechanism,
+    attention_layer_size=att_num_hidden,
+    name="attention",
+    initial_cell_state=encoder_final_state[-1])
+    # memory_sequence_length=source_sequence_length)
+
+initial_state = [state for state in encoder_final_state]
+initial_state[-1] = decoder_cells[-1].zero_state(batch_size=batch_size, dtype=tf.float32)
+    # .clone cell_state=encoder_final_state[-1])
+decoder_initial_state = tuple(initial_state)
 
 decoder_cell = tf.contrib.rnn.MultiRNNCell(decoder_cells)
 
@@ -81,7 +101,7 @@ training_helper = tf.contrib.seq2seq.TrainingHelper(
     inputs=decoder_inputs, sequence_length=pl_length, time_major=False, name='training_helper')
 
 decoder = tf.contrib.seq2seq.BasicDecoder(
-    decoder_cell, training_helper, encoder_final_state)
+    decoder_cell, training_helper, decoder_initial_state)
 
 # Dynamic decoding
 max_decoder_length = tf.reduce_max(pl_length)
@@ -89,10 +109,10 @@ decoder_out, final_state, final_seq_len = tf.contrib.seq2seq.dynamic_decode(
     decoder, output_time_major=False)
 
 output = tf.contrib.layers.fully_connected(decoder_out[0], de_vocab_size, activation_fn=tf.nn.sigmoid)
-final_logit = tf.log(tf.clip_by_value(output, 1e-11, 1.0))
+final_logit = tf.log(tf.clip_by_value(output, 1e-13, 1.0))
 loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
     labels=pl_labels, logits=final_logit))
-trapl_op = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=momentum).minimize(loss)
+train_op = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=momentum).minimize(loss)
 
 init = tf.global_variables_initializer()
 
@@ -112,7 +132,7 @@ with tf.Session() as sess:
         for i in range(total_batch):
             x, y, de, ln = get_batch(batch_size, i)
             feed_dict = {pl_inputs: x, pl_labels: y, pl_decoder: de, pl_length: ln}
-            sess.run(trapl_op, feed_dict=feed_dict)
+            sess.run(train_op, feed_dict=feed_dict)
 
             # Compute the average loss OPTIONAL
             avg_cost += sess.run(loss, feed_dict=feed_dict)/total_batch
@@ -121,7 +141,6 @@ with tf.Session() as sess:
         print("Iteration:", '%04d' % (iteration + 1), "cost=", "{:.9f}".format(avg_cost))
 
     saver.save(sess, 'savedmodels/model_num_seq2seq')
-
     print("Tuning Completed!")
 
     x, y, d, ln = get_batch(batch_size, i)
@@ -129,5 +148,5 @@ with tf.Session() as sess:
     results = sess.run(output, feed_dict=feed_dict)
     Y_out = [logits_t.argmax(axis=1) for logits_t in results]
 
-    print(x.T)
-    print(np.array(Y_out).T)
+    print(x)
+    print(np.array(Y_out))

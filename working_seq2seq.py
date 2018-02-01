@@ -8,8 +8,7 @@ att_num_hidden = 100
 learning_rate = 0.001
 momentum = 0.9
 epoch = 100
-attention = False
-keep_initial_state = True
+attention = True
 
 en_vocab_size = 10  # Total vocab size including <eos> and <pad>
 de_vocab_size = 9  # Total vocab size including <eos> and <pad>
@@ -95,17 +94,17 @@ for _ in range(num_layers):
 attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(att_num_hidden, encoder_outputs)
 initial_state = [state for state in encoder_final_state]
 
-decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
-    cell=decoder_cells[-1],
-    attention_mechanism=attention_mechanism,
-    attention_layer_size=att_num_hidden,
-    name="attention",
-    initial_cell_state=encoder_final_state[-1])
-    # memory_sequence_length=source_sequence_length)
+if attention:
+    decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
+        cell=decoder_cells[-1],
+        attention_mechanism=attention_mechanism,
+        attention_layer_size=att_num_hidden,
+        name="attention",
+        initial_cell_state=encoder_final_state[-1])
+        # memory_sequence_length=source_sequence_length)
+    initial_state[-1] = decoder_cells[-1].zero_state(batch_size=batch_size, dtype=tf.float32).clone(cell_state=encoder_final_state[-1])
 
-initial_state[-1] = decoder_cells[-1].zero_state(batch_size=batch_size, dtype=tf.float32).clone(cell_state=encoder_final_state[-1])
 decoder_initial_state = tuple(initial_state)
-
 decoder_cell = tf.contrib.rnn.MultiRNNCell(decoder_cells)
 
 if pl_train is not None:

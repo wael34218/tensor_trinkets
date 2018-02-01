@@ -52,6 +52,7 @@ pl_inputs = tf.placeholder(shape=(None, None), dtype=tf.int32, name='enc_inp')
 pl_labels = tf.placeholder(shape=(None, None), dtype=tf.int32, name='dec_tar')
 pla_inp_len = tf.placeholder(shape=(None, ), dtype=tf.int32, name='enc_seq_len')
 pla_lab_len = tf.placeholder(shape=(None, ), dtype=tf.int32, name='dec_seq_len')
+pl_train = tf.placeholder(shape=([]), dtype=tf.bool, name='trainable')
 
 encoder_inputs = tf.one_hot(pl_inputs, en_vocab_size + 4)
 
@@ -107,11 +108,15 @@ decoder_initial_state = tuple(initial_state)
 
 decoder_cell = tf.contrib.rnn.MultiRNNCell(decoder_cells)
 
-training_helper = tf.contrib.seq2seq.TrainingHelper(
-    inputs=decoder_inputs, sequence_length=pla_lab_len, time_major=False, name='training_helper')
+if pl_train is not None:
+    helper = tf.contrib.seq2seq.TrainingHelper(
+        inputs=decoder_inputs, sequence_length=pla_lab_len, time_major=False, name='training_helper')
+else:
+    helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+        embedding=tf.one_hot, start_tokens=tf.fill([batch_size], go), end_token=eos)
 
 decoder = tf.contrib.seq2seq.BasicDecoder(
-    decoder_cell, training_helper, decoder_initial_state)
+    decoder_cell, helper, decoder_initial_state)
 
 # Dynamic decoding
 max_decoder_length = tf.reduce_max(pla_inp_len)
@@ -141,7 +146,8 @@ with tf.Session() as sess:
         total_batch = 10  # It should be dependednt on the training data size
         for i in range(total_batch):
             x, y, xl, yl = get_batch(batch_size, i)
-            feed_dict = {pl_inputs: x, pl_labels: y, pla_inp_len: xl, pla_lab_len: yl}
+            feed_dict = {pl_inputs: x, pl_labels: y,
+                         pla_inp_len: xl, pla_lab_len: yl, pl_train: True}
             sess.run(train_op, feed_dict=feed_dict)
 
             # Compute the average loss OPTIONAL
@@ -154,7 +160,8 @@ with tf.Session() as sess:
     print("Tuning Completed!")
 
     x, y, xl, yl = get_batch(batch_size, i)
-    feed_dict = {pl_inputs: x, pl_labels: y, pla_inp_len: xl, pla_lab_len: yl}
+    feed_dict = {pl_inputs: x, pl_labels: y,
+                 pla_inp_len: xl, pla_lab_len: yl, pl_train: False}
     results = sess.run(output, feed_dict=feed_dict)
     Y_out = [logits_t.argmax(axis=1) for logits_t in results]
 

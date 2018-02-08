@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+# from tensorflow.python import debug as tfdbg
 
 batch_size = 32
 embedding_dim = 10  # dimension of each word
@@ -7,13 +8,12 @@ num_hidden = 100  # number of hidden units in LSTM
 att_num_hidden = 100
 learning_rate = 0.001
 momentum = 0.9
-epoch = 20
-attention = False
+epoch = 200
+attention = True
 
 en_vocab_size = 10  # Total vocab size including <eos> and <pad>
 de_vocab_size = 9  # Total vocab size including <eos> and <pad>
 num_layers = 2
-
 
 # Data sequence preparation
 go = 0
@@ -24,7 +24,7 @@ unk = 3
 en_seq_length = 7
 de_seq_length = 7
 
-beam_size = 6
+beam_size = 3
 
 # TODOS:
 # 1- batch_size should not be defined in the network
@@ -80,130 +80,91 @@ outputs_concat = tf.concat([biout[0], biout[1]], 2)
 encoder_cells = []
 for _ in range(num_layers):
     cell = tf.contrib.rnn.LSTMCell(
-        num_hidden, initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=2))
+        num_hidden, initializer=tf.random_uniform_initializer(-0.5, 0.5, seed=2))
     encoder_cells.append(cell)
 
 encoder_cell = tf.contrib.rnn.MultiRNNCell(encoder_cells)
 encoder_outputs, encoder_final_state = tf.nn.dynamic_rnn(
     encoder_cell, outputs_concat, dtype=tf.float32, time_major=False, scope="plapl_encoder")
 
-# Decoder also uses dynamic_rnn
-decoder_cells = []
-for _ in range(num_layers):
-    cell = tf.contrib.rnn.LSTMCell(
-        num_hidden, initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=2))
-    decoder_cells.append(cell)
 
-# def attn_decoder_custom_fn(inputs, attention):
-#     # to make shapes equal for skip connections
-#     if self.model_params['decoder_use_skip_connections']:
-#         input_layer=layers_core.Dense(self.model_params['attention_layer_size'], dtype=getdtype())
-#         return input_layer(tf.concat([inputs, attention], -1))
-#     else:
-#         return tf.concat([inputs, attention], -1)
-
-# def attn_decoder_input_fn(inputs, attention):
-#     #if not self.attn_input_feeding:
-#     #    return inputs
-#
-#     # Essential when use_residual=True
-#     _input_layer = tf.layers.Dense(num_hidden, dtype=tf.float32, name='attn_input_feeding')
-#     return _input_layer(tf.concat([inputs, attention], -1))
-
-initial_state = [state for state in encoder_final_state]
-
-with tf.variable_scope("attention_scope"):
-    if attention:
-        attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-            num_units=att_num_hidden,
-            memory=encoder_outputs,
-            normalize=True)
-        decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
-            cell=decoder_cells[-1],
-            attention_mechanism=attention_mechanism,
-            attention_layer_size=att_num_hidden,
-            name="attention",
-            initial_cell_state=encoder_final_state[-1])
-        initial_state[-1] = decoder_cells[-1].zero_state(
-            batch_size=batch_size, dtype=tf.float32).clone(cell_state=encoder_final_state[-1])
-
-
-decoder_initial_state = tuple(initial_state)
-decoder_cell = tf.contrib.rnn.MultiRNNCell(decoder_cells)
-
-output = tf.layers.Dense(de_vocab_size, activation=tf.nn.sigmoid,
-                         kernel_initializer=tf.truncated_normal_initializer(mean=0.0, stddev=0.1))
-
-# Training Helper
-helper = tf.contrib.seq2seq.TrainingHelper(
-    inputs=decoder_inputs, sequence_length=pla_lab_len, time_major=False, name='training_help')
-decoder = tf.contrib.seq2seq.BasicDecoder(cell=decoder_cell, helper=helper,
-                                          initial_state=decoder_initial_state,
-                                          output_layer=output)
-
-decoder_train, final_state, final_seq_len = tf.contrib.seq2seq.dynamic_decode(
-    decoder, output_time_major=False)
-
-decoder_logits = tf.identity(decoder_train.rnn_output, 'logits')
-final_logit = tf.log(tf.clip_by_value(decoder_logits, 1e-13, 1.0))
-
-
-# Greedy Helper
 def one_hot(inp):
     return tf.one_hot(inp, de_vocab_size + 4)
 
 
+# Decoder also uses dynamic_rnn
+def build_decoder(encoder_outputs, encoder_last_state, batch_size, helper, beam_size=1, reuse=None):
+    with tf.variable_scope("seq2seq_decoder", reuse=reuse):
+        if beam_size > 1:
+            encoder_outputs = tf.contrib.seq2seq.tile_batch(
+                encoder_outputs, multiplier=beam_size)
+            encoder_last_state = tf.contrib.framework.nest.map_structure(
+                lambda s: tf.contrib.seq2seq.tile_batch(s, beam_size), encoder_last_state)
+
+        decoder_cells = [tf.contrib.rnn.LSTMCell(
+            num_hidden, initializer=tf.random_uniform_initializer(-0.5, 0.5, seed=2))
+            for i in range(num_layers)]
+        decoder_initial_state = encoder_last_state
+        initial_state = [state for state in encoder_last_state]
+
+        if attention:
+            attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+                num_units=att_num_hidden, memory=encoder_outputs)
+            decoder_cells[-1] = tf.contrib.seq2seq.AttentionWrapper(
+                cell=decoder_cells[-1],
+                attention_mechanism=attention_mechanism,
+                attention_layer_size=att_num_hidden,
+                name="attention",
+                initial_cell_state=encoder_last_state[-1])
+            initial_state[-1] = decoder_cells[-1].zero_state(
+                batch_size=batch_size * beam_size, dtype=tf.float32)
+
+        decoder_initial_state = tuple(initial_state)
+        decoder_cell = tf.contrib.rnn.MultiRNNCell(decoder_cells)
+
+        output = tf.layers.Dense(de_vocab_size, activation=tf.nn.sigmoid,
+                                 kernel_initializer=tf.truncated_normal_initializer(
+                                    mean=0.0, stddev=0.1))
+
+        if helper is None:
+            decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                cell=decoder_cell,
+                embedding=one_hot,
+                start_tokens=tf.fill([batch_size], go),
+                end_token=eos,
+                length_penalty_weight=0.0,
+                initial_state=decoder_initial_state,
+                beam_width=beam_size,
+                output_layer=output)
+        else:
+            decoder = tf.contrib.seq2seq.BasicDecoder(
+                cell=decoder_cell, helper=helper, initial_state=decoder_initial_state,
+                output_layer=output)
+
+        decoder_train, final_state, final_seq_len = tf.contrib.seq2seq.dynamic_decode(
+            decoder, output_time_major=False, maximum_iterations=de_seq_length)
+    return decoder_train, final_state, final_seq_len
+
+
+# Train Decoder
+training_helper = tf.contrib.seq2seq.TrainingHelper(
+    inputs=decoder_inputs, sequence_length=pla_lab_len, time_major=False, name='training_help')
+train_out, final_state, final_seq_len = build_decoder(
+    encoder_outputs, encoder_final_state, batch_size, training_helper, beam_size=1)
+
+# Greedy Decoder
 greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
     embedding=one_hot, start_tokens=tf.fill([batch_size], go), end_token=eos)
-greedy_decoder = tf.contrib.seq2seq.BasicDecoder(cell=decoder_cell, helper=greedy_helper,
-                                                 initial_state=decoder_initial_state,
-                                                 output_layer=output)
-greedy_out, final_infec, len_infer = tf.contrib.seq2seq.dynamic_decode(
-    greedy_decoder, output_time_major=False)
+greedy_out, final_infec, len_infer = build_decoder(
+    encoder_outputs, encoder_final_state, batch_size, greedy_helper, beam_size=1, reuse=True)
 
 # Beam Decoder
-with tf.variable_scope("attention_scope", reuse=True):
-    if attention:
-        enc_rnn_out_beam = tf.contrib.seq2seq.tile_batch(encoder_outputs, beam_size)
-        seq_len_beam = tf.contrib.seq2seq.tile_batch(pla_lab_len, beam_size)
-        enc_rnn_state_beam = tf.contrib.seq2seq.tile_batch(encoder_final_state, beam_size)
+beam_out, final_infec, len_infer = build_decoder(
+    encoder_outputs, encoder_final_state, batch_size, None, beam_size, reuse=True)
 
-        batch_size_beam = tf.shape(enc_rnn_out_beam)[0]
-        attn_mech_beam = tf.contrib.seq2seq.BahdanauAttention(
-            num_units=att_num_hidden, memory=enc_rnn_out_beam, normalize=True)
-        cell_beam = tf.contrib.seq2seq.AttentionWrapper(
-            cell=decoder_cells[-1],
-            attention_mechanism=attn_mech_beam,
-            attention_layer_size=att_num_hidden)
-
-        initial_state_beam = cell_beam.zero_state(
-            batch_size=batch_size_beam, dtype=tf.float32).clone(cell_state=enc_rnn_state_beam)
-
-        beam_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-            cell=cell_beam,
-            embedding=one_hot,
-            start_tokens=tf.fill([batch_size_beam], go),
-            end_token=eos,
-            length_penalty_weight=0.0,
-            initial_state=initial_state_beam,
-            beam_width=beam_size,
-            output_layer=output)
-        beam_out, final_infec, len_infer = tf.contrib.seq2seq.dynamic_decode(
-            beam_decoder, output_time_major=False, maximum_iterations=de_seq_length)
-    else:
-        beam_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-            cell=decoder_cell,
-            embedding=one_hot,
-            start_tokens=tf.fill([batch_size], go),
-            end_token=eos,
-            length_penalty_weight=0.0,
-            initial_state=tf.contrib.seq2seq.tile_batch(encoder_final_state, multiplier=beam_size),
-            beam_width=beam_size,
-            output_layer=output)
-        beam_out, final_infec, len_infer = tf.contrib.seq2seq.dynamic_decode(
-            beam_decoder, output_time_major=False, maximum_iterations=de_seq_length)
-
-
+# Optimization
+decoder_logits = tf.identity(train_out.rnn_output, 'logits')
+final_logit = tf.log(tf.clip_by_value(decoder_logits, 1e-13, 1.0))
 loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
     labels=pl_labels, logits=final_logit))
 train_op = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=momentum).minimize(loss)
@@ -226,8 +187,8 @@ with tf.Session() as sess:
         for i in range(total_batch):
             x, y, xl, yl = get_batch(batch_size, i)
             feed_dict = {pl_inputs: x, pl_labels: y, pla_inp_len: xl, pla_lab_len: yl}
-            dein = sess.run(decoder_initial_state, feed_dict=feed_dict)
             sess.run(train_op, feed_dict=feed_dict)
+            # sess = tfdbg.LocalCLIDebugWrapperSession(sess)
 
             # Compute the average loss OPTIONAL
             avg_cost += sess.run(loss, feed_dict=feed_dict)/total_batch
@@ -240,10 +201,8 @@ with tf.Session() as sess:
 
     x, y, xl, yl = get_batch(batch_size, i)
     feed_dict = {pl_inputs: x, pl_labels: y, pla_inp_len: xl, pla_lab_len: yl}
-    res_train, res_greedy, res_beam = sess.run([decoder_train, greedy_out, beam_out],
+    res_train, res_greedy, res_beam = sess.run([train_out, greedy_out, beam_out],
                                                feed_dict=feed_dict)
-
-    # Y_out = [logits_t.argmax(axis=1) for logits_t in results]
 
     print(y)
     print(res_train.sample_id)
